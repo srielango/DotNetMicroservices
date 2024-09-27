@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using AutoMapper;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -5,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using PlatformService.Data;
 using PlatformService.Dtos;
 using PlatformService.Models;
+using PlatformService.SyncDataServices.Http;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,6 +15,7 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
         opt.UseInMemoryDatabase("InMem"));
 
 builder.Services.AddScoped<IPlatformRepo, PlatformRepo>();
+builder.Services.AddHttpClient<ICommandDataClient, CommandDataClient>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -28,7 +31,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 
 PrepDb.PrepPopulation(app);
 
@@ -53,31 +56,27 @@ app.MapGet("/api/Platforms/{id}", (IPlatformRepo repository, IMapper mapper, [Fr
 .WithName("GetPlatformById")
 .WithOpenApi();
 
-app.MapPost("/api/Platforms", (IPlatformRepo repository, IMapper mapper, PlatformCreateDto platformCreateDto) =>
+app.MapPost("/api/Platforms", async (IPlatformRepo repository, IMapper mapper, ICommandDataClient commandDataClient, PlatformCreateDto platformCreateDto) =>
 {
     var platformModel = mapper.Map<Platform>(platformCreateDto);
     repository.CreatePlatform(platformModel);
     repository.SaveChanges();
 
     var platformReadDto = mapper.Map<PlatformReadDto>(platformModel);
+
+    try
+    {
+        await commandDataClient.SendPlatformToCommand(platformReadDto);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"--> Could not send synchronously: {ex.Message}");
+    }
     return Results.CreatedAtRoute("GetPlatformById", new { Id = platformReadDto.Id }, platformReadDto);
 })
 .WithOpenApi();
 
-// app.MapGet("/weatherforecast", () =>
-// {
-//     var forecast =  Enumerable.Range(1, 5).Select(index =>
-//         new WeatherForecast
-//         (
-//             DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-//             Random.Shared.Next(-20, 55),
-//             summaries[Random.Shared.Next(summaries.Length)]
-//         ))
-//         .ToArray();
-//     return forecast;
-// })
-// .WithName("GetWeatherForecast")
-// .WithOpenApi();
+Console.WriteLine($"--> CommandService Endpoint {builder.Configuration["CommandService"]}");
 
 app.Run();
 
