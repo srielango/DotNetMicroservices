@@ -1,8 +1,10 @@
 using System.Net.Mail;
 using System.Text;
 using AutoMapper;
+using CommandsService.AsyncDataServices;
 using CommandsService.Data;
 using CommandsService.Dtos;
+using CommandsService.EventProcessing;
 using CommandsService.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
@@ -14,6 +16,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddDbContext<AppDbContext>(opt => opt.UseInMemoryDatabase("InMem"));
 builder.Services.AddScoped<ICommandRepo, CommandRepo>();
+builder.Services.AddHostedService<MessageBusSubscriber>();
+
+builder.Services.AddSingleton<IEventProcessor, EventProcessor>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

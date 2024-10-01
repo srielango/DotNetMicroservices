@@ -3,6 +3,7 @@ using AutoMapper;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using PlatformService.AsyncDataServices;
 using PlatformService.Data;
 using PlatformService.Dtos;
 using PlatformService.Models;
@@ -16,6 +17,7 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
 
 builder.Services.AddScoped<IPlatformRepo, PlatformRepo>();
 builder.Services.AddHttpClient<ICommandDataClient, CommandDataClient>();
+builder.Services.AddSingleton<IMessageBusClient, MessageBusClient>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -56,7 +58,11 @@ app.MapGet("/api/Platforms/{id}", (IPlatformRepo repository, IMapper mapper, [Fr
 .WithName("GetPlatformById")
 .WithOpenApi();
 
-app.MapPost("/api/Platforms", async (IPlatformRepo repository, IMapper mapper, ICommandDataClient commandDataClient, PlatformCreateDto platformCreateDto) =>
+app.MapPost("/api/Platforms", async (IPlatformRepo repository,
+    IMapper mapper,
+    ICommandDataClient commandDataClient,
+    IMessageBusClient messageBusClient,
+PlatformCreateDto platformCreateDto) =>
 {
     var platformModel = mapper.Map<Platform>(platformCreateDto);
     repository.CreatePlatform(platformModel);
@@ -64,6 +70,7 @@ app.MapPost("/api/Platforms", async (IPlatformRepo repository, IMapper mapper, I
 
     var platformReadDto = mapper.Map<PlatformReadDto>(platformModel);
 
+    //Send sync message
     try
     {
         await commandDataClient.SendPlatformToCommand(platformReadDto);
@@ -72,6 +79,19 @@ app.MapPost("/api/Platforms", async (IPlatformRepo repository, IMapper mapper, I
     {
         Console.WriteLine($"--> Could not send synchronously: {ex.Message}");
     }
+
+    //Send async messge
+    try
+    {
+        var platformPublishedDto = mapper.Map<PlatformPublishedDto>(platformReadDto);
+        platformPublishedDto.Event = "Platform_Published";
+        messageBusClient.PublishPlatform(platformPublishedDto);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"--> Could not send asynchronously: {ex.Message}");
+    }
+
     return Results.CreatedAtRoute("GetPlatformById", new { Id = platformReadDto.Id }, platformReadDto);
 })
 .WithOpenApi();
